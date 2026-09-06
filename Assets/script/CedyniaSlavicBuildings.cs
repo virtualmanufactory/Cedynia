@@ -5,26 +5,29 @@ public static class CedyniaSlavicBuildings
 {
     public static int Replace(GameObject gord, Material logWood, Material thatch, Material darkWood)
     {
-        if (gord == null || logWood == null || thatch == null || darkWood == null)
+        if (gord == null)
         {
-            Debug.LogWarning("Cedynia: brak grodziska albo materialow — nie wstawiono chat.");
+            Debug.LogWarning("Cedynia: brak grodziska — nie wstawiono chat.");
             return 0;
         }
 
+        if (logWood == null) logWood = FallbackMat(new Color(0.72f, 0.52f, 0.28f));
+        if (thatch == null) thatch = FallbackMat(new Color(0.28f, 0.40f, 0.14f));
+        if (darkWood == null) darkWood = FallbackMat(new Color(0.28f, 0.16f, 0.08f));
+
         HideOriginals(gord);
 
-        Transform existing = gord.transform.Find("Chaty_Slowianskie");
-        if (existing != null)
-        {
-            if (Application.isPlaying)
-                Object.Destroy(existing.gameObject);
-            else
-                Object.DestroyImmediate(existing.gameObject);
-        }
+        var existing = GameObject.Find("Chaty_Slowianskie");
+        if (existing != null && existing.transform.childCount > 0)
+            return KeepExisting(existing);
 
         var root = new GameObject("Chaty_Slowianskie");
-        root.transform.SetParent(gord.transform, false);
+        root.transform.SetParent(null);
+        root.transform.position = Vector3.zero;
+        root.transform.rotation = Quaternion.identity;
+        root.transform.localScale = Vector3.one;
 
+        float floorY = 0.012f;
         int built = 0;
         foreach (var spec in HouseLayout)
         {
@@ -37,29 +40,157 @@ public static class CedyniaSlavicBuildings
             Vector3 right = Vector3.Cross(Vector3.up, axis);
             bool doorOnPlusX = Vector3.Dot(right, -new Vector3(spec.pos.x, 0f, spec.pos.z)) > 0f;
 
-            var house = BuildLogHouse(spec.length, spec.width, 0.32f, 0.030f, doorOnPlusX, true, logWood, thatch, darkWood);
+            var house = BuildLogHouse(spec.length, spec.width, 0.36f, 0.032f, doorOnPlusX, true, logWood, thatch, darkWood);
             house.name = spec.name;
             house.transform.SetParent(root.transform, false);
-            house.transform.localPosition = spec.pos;
-            house.transform.localRotation = Quaternion.LookRotation(axis, Vector3.up);
+            PlaceOnGord(house.transform, gord, new Vector3(spec.pos.x, floorY, spec.pos.z), axis);
+            EnsureVisible(house, spec.length, spec.width, 0.36f, logWood, thatch);
 
             var box = house.AddComponent<BoxCollider>();
-            box.center = new Vector3(0f, 0.24f, 0f);
-            box.size = new Vector3(spec.width + 0.08f, 0.48f, spec.length + 0.08f);
+            box.center = new Vector3(0f, 0.26f, 0f);
+            box.size = new Vector3(spec.width + 0.08f, 0.52f, spec.length + 0.08f);
             built++;
         }
 
-        Vector3 gatePos = new Vector3(-0.33f, 1.278f, -2.00f);
+        Vector3 gatePos = new Vector3(-0.33f, floorY, -2.00f);
         Vector3 outward = new Vector3(gatePos.x, 0f, gatePos.z).normalized;
-        var gate = BuildGatehouse(1.10f, 0.78f, 0.38f, 0.36f, 0.030f, logWood, thatch, darkWood);
+        var gate = BuildGatehouse(1.10f, 0.78f, 0.40f, 0.36f, 0.032f, logWood, thatch, darkWood);
         gate.name = "Brama_zrebowa";
         gate.transform.SetParent(root.transform, false);
-        gate.transform.localPosition = gatePos;
-        gate.transform.localRotation = Quaternion.LookRotation(outward, Vector3.up);
+        PlaceOnGord(gate.transform, gord, gatePos, outward);
+        EnsureVisible(gate, 1.1f, 0.78f, 0.40f, logWood, thatch);
         built++;
 
-        Debug.Log("Cedynia: wstawiono " + built + " budynkow zrebowych (6 chat + brama).");
+        Debug.Log("Cedynia: wstawiono " + built + " budynkow zrebowych na dziedzincu (6 chat + brama).");
         return built;
+    }
+
+    public static int KeepExisting(GameObject root)
+    {
+        if (root == null)
+            return 0;
+
+        root.SetActive(true);
+        int n = 0;
+        foreach (var rend in root.GetComponentsInChildren<MeshRenderer>(true))
+        {
+            rend.enabled = true;
+            rend.gameObject.SetActive(true);
+            n++;
+        }
+        Debug.Log("Cedynia: zostawiono chaty ze sceny (" + root.transform.childCount + ").");
+        return root.transform.childCount;
+    }
+
+    static void PlaceOnGord(Transform t, GameObject gord, Vector3 localPos, Vector3 localForward)
+    {
+        t.position = gord.transform.TransformPoint(localPos);
+        t.rotation = gord.transform.rotation * Quaternion.LookRotation(localForward, Vector3.up);
+        t.localScale = gord.transform.lossyScale;
+    }
+
+    static void DestroyNamed(GameObject gord, string name)
+    {
+        var t = gord.transform.Find(name);
+        if (t != null)
+            Object.DestroyImmediate(t.gameObject);
+    }
+
+    static void EnsureVisible(GameObject go, float length, float width, float wallH, Material logWood, Material thatch)
+    {
+        int verts = 0;
+        foreach (var mf in go.GetComponentsInChildren<MeshFilter>(true))
+        {
+            if (mf.sharedMesh != null)
+                verts += mf.sharedMesh.vertexCount;
+            var rend = mf.GetComponent<MeshRenderer>();
+            if (rend != null)
+            {
+                rend.enabled = true;
+                if (rend.sharedMaterial == null)
+                    rend.sharedMaterial = logWood;
+            }
+        }
+
+        if (verts < 8)
+        {
+            AddFallbackBox(go, new Vector3(0f, wallH * 0.5f, 0f), new Vector3(width, wallH, length), logWood);
+            AddFallbackBox(go, new Vector3(0f, wallH + 0.12f, 0f), new Vector3(width + 0.12f, 0.16f, length + 0.12f), thatch);
+        }
+    }
+
+    static void AddFallbackBox(GameObject parent, Vector3 pos, Vector3 size, Material mat)
+    {
+        var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cube.name = "WidocznyBlok";
+        cube.transform.SetParent(parent.transform, false);
+        cube.transform.localPosition = pos;
+        cube.transform.localScale = size;
+        var rend = cube.GetComponent<MeshRenderer>();
+        if (rend != null)
+        {
+            rend.enabled = true;
+            rend.sharedMaterial = mat;
+        }
+        var col = cube.GetComponent<Collider>();
+        if (col != null)
+            Object.Destroy(col);
+    }
+
+    static Material FallbackMat(Color color)
+    {
+        var shader = Shader.Find("Standard")
+                     ?? Shader.Find("Legacy Shaders/Diffuse")
+                     ?? Shader.Find("Unlit/Color");
+        var mat = shader != null ? new Material(shader) : new Material(Shader.Find("Sprites/Default"));
+        mat.color = color;
+        return mat;
+    }
+
+    public static void BuildExitRamp(GameObject gord, Material wood)
+    {
+        if (gord == null || wood == null)
+            return;
+        var oldRamp = gord.transform.Find("Most_wyjscia");
+        if (oldRamp != null)
+        {
+            if (Application.isPlaying)
+                Object.Destroy(oldRamp.gameObject);
+            else
+                Object.DestroyImmediate(oldRamp.gameObject);
+        }
+
+        var acc = new Acc();
+        Vector3[] path =
+        {
+            new Vector3(-0.33f, 0.05f, -1.25f),
+            new Vector3(-0.33f, 0.05f, -1.85f),
+            new Vector3(-0.33f, 0.05f, -2.35f),
+            new Vector3(-0.33f, 0.05f, -3.40f),
+            new Vector3(-0.33f, 0.05f, -4.50f),
+            new Vector3(-0.33f, 0.05f, -5.60f)
+        };
+        float half = 0.20f;
+        Vector3 outward = new Vector3(-0.16f, 0f, -1f).normalized;
+        Vector3 side = Vector3.Cross(Vector3.up, outward).normalized;
+
+        for (int i = 0; i < path.Length - 1; i++)
+        {
+            Vector3 a = path[i];
+            Vector3 b = path[i + 1];
+            Vector3 a0 = a - side * half;
+            Vector3 a1 = a + side * half;
+            Vector3 b0 = b - side * half;
+            Vector3 b1 = b + side * half;
+            Vector3 up = Vector3.up * 0.025f;
+            AddThickQuad(acc, a0, b0, b1, a1, up);
+        }
+
+        var go = new GameObject("Most_wyjscia");
+        go.transform.SetParent(gord.transform, false);
+        AttachMesh(go, "Deski", acc.ToMesh("Most"), wood);
+        var col = go.AddComponent<MeshCollider>();
+        col.sharedMesh = go.GetComponentInChildren<MeshFilter>().sharedMesh;
     }
 
     public static void HideOriginals(GameObject gord)
@@ -68,23 +199,12 @@ public static class CedyniaSlavicBuildings
         {
             if (mf == null)
                 continue;
-            if (mf.transform.root != gord.transform && mf.transform != gord.transform && !mf.transform.IsChildOf(gord.transform))
-                continue;
-            var alreadyBuilt = gord.transform.Find("Chaty_Slowianskie");
-            if (alreadyBuilt != null && mf.transform.IsChildOf(alreadyBuilt))
+
+            string n = mf.gameObject.name.ToLowerInvariant();
+            if (n.Contains("chata") || n.Contains("brama") || n.Contains("bale") || n.Contains("strzecha") || n.Contains("detal") || n.StartsWith("widoczny"))
                 continue;
 
-            string n = (mf.gameObject.name + " " + (mf.sharedMesh != null ? mf.sharedMesh.name : "")).ToLowerInvariant();
-            bool hutOrGate = n.Contains("hut") || n.Contains("gate") || n.Contains("brama") || n.Contains("chata");
-            if (!hutOrGate && mf.sharedMesh != null && mf.sharedMesh.vertexCount > 0 && mf.sharedMesh.vertexCount <= 40)
-            {
-                Vector3 c = mf.transform.TransformPoint(mf.sharedMesh.bounds.center);
-                Vector3 local = gord.transform.InverseTransformPoint(c);
-                if (local.y > 1.1f && new Vector2(local.x, local.z).magnitude < 2.4f)
-                    hutOrGate = true;
-            }
-
-            if (!hutOrGate)
+            if (!n.StartsWith("hut") && !n.Contains("gatetower") && n != "gate")
                 continue;
 
             var rend = mf.GetComponent<MeshRenderer>();
@@ -106,12 +226,12 @@ public static class CedyniaSlavicBuildings
 
     static readonly HouseSpec[] HouseLayout =
     {
-        new HouseSpec { name = "Chata_1", pos = new Vector3(1.232f, 1.344f, 1.512f), axis = new Vector3(-0.757f, 0f, 0.231f), length = 0.88f, width = 0.60f },
-        new HouseSpec { name = "Chata_2", pos = new Vector3(-1.078f, 1.346f, -1.379f), axis = new Vector3(-0.476f, 0f, 0.478f), length = 0.82f, width = 0.56f },
-        new HouseSpec { name = "Chata_3", pos = new Vector3(-1.379f, 1.341f, -0.448f), axis = new Vector3(-0.166f, 0f, 0.698f), length = 0.76f, width = 0.52f },
-        new HouseSpec { name = "Chata_4", pos = new Vector3(-1.496f, 1.344f, 0.697f), axis = new Vector3(0.279f, 0f, 0.659f), length = 0.76f, width = 0.52f },
-        new HouseSpec { name = "Chata_5", pos = new Vector3(-0.900f, 1.348f, 1.559f), axis = new Vector3(0.590f, 0f, 0.457f), length = 0.76f, width = 0.54f },
-        new HouseSpec { name = "Chata_6", pos = new Vector3(0.131f, 1.338f, 1.494f), axis = new Vector3(0.710f, 0f, 0.033f), length = 0.82f, width = 0.52f }
+        new HouseSpec { name = "Chata_1", pos = new Vector3(1.232f, 0.012f, 1.512f), axis = new Vector3(-0.757f, 0f, 0.231f), length = 0.88f, width = 0.60f },
+        new HouseSpec { name = "Chata_2", pos = new Vector3(-1.078f, 0.012f, -1.379f), axis = new Vector3(-0.476f, 0f, 0.478f), length = 0.82f, width = 0.56f },
+        new HouseSpec { name = "Chata_3", pos = new Vector3(-1.379f, 0.012f, -0.448f), axis = new Vector3(-0.166f, 0f, 0.698f), length = 0.76f, width = 0.52f },
+        new HouseSpec { name = "Chata_4", pos = new Vector3(-1.496f, 0.012f, 0.697f), axis = new Vector3(0.279f, 0f, 0.659f), length = 0.76f, width = 0.52f },
+        new HouseSpec { name = "Chata_5", pos = new Vector3(-0.900f, 0.012f, 1.559f), axis = new Vector3(0.590f, 0f, 0.457f), length = 0.76f, width = 0.54f },
+        new HouseSpec { name = "Chata_6", pos = new Vector3(0.131f, 0.012f, 1.494f), axis = new Vector3(0.710f, 0f, 0.033f), length = 0.82f, width = 0.52f }
     };
 
     static void BuildHouseFromOriginal(Transform parent, MeshFilter original, Material logWood, Material thatch, Material darkWood)

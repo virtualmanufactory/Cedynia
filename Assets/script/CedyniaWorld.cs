@@ -5,7 +5,14 @@ public class CedyniaWorld : MonoBehaviour
 {
     public const float GordScale = 8f;
     public const float GordRadius = 52f;
-    const float WorldSize = 340f;
+    public const float MoatRadius = 36.8f;
+    public const float GroundY = 0.05f;
+    public const float WaterY = -0.12f;
+    public const float RiverDrop = 0.32f;
+    public const float BankWidth = 5.5f;
+    public const float WorldSize = 340f;
+    public const float WorldLimit = 162f;
+    public const float FlyMaxY = 72f;
     const int TerrainRes = 150;
     const int TreeCount = 720;
 
@@ -29,6 +36,7 @@ public class CedyniaWorld : MonoBehaviour
         BuildLandscape(mats);
         BuildRiver(mats);
         BuildForest(mats);
+        BuildWorldBounds();
         SpawnPlayer(gord);
     }
 
@@ -62,13 +70,26 @@ public class CedyniaWorld : MonoBehaviour
         return m;
     }
 
+    static Shader LitShader()
+    {
+        return Shader.Find("Standard")
+               ?? Shader.Find("Legacy Shaders/Diffuse")
+               ?? Shader.Find("Diffuse")
+               ?? Shader.Find("Unlit/Color")
+               ?? Shader.Find("Sprites/Default");
+    }
+
     static Material Standard(Texture tex, float gloss, Color tint)
     {
-        var mat = new Material(Shader.Find("Standard"));
-        mat.mainTexture = tex;
+        var shader = LitShader();
+        var mat = shader != null ? new Material(shader) : new Material(Shader.Find("Hidden/InternalErrorShader"));
+        if (tex != null)
+            mat.mainTexture = tex;
         mat.color = tint;
-        mat.SetFloat("_Glossiness", gloss);
-        mat.SetFloat("_Metallic", 0f);
+        if (mat.HasProperty("_Glossiness"))
+            mat.SetFloat("_Glossiness", gloss);
+        if (mat.HasProperty("_Metallic"))
+            mat.SetFloat("_Metallic", 0f);
         return mat;
     }
 
@@ -101,9 +122,16 @@ public class CedyniaWorld : MonoBehaviour
         if (animator != null)
             animator.enabled = false;
 
+        var bakedHouses = FindDeep(gord.transform, "Chaty_Slowianskie");
+        var exitRamp = FindDeep(gord.transform, "Most_wyjscia");
+
         foreach (var mf in gord.GetComponentsInChildren<MeshFilter>())
         {
             if (mf.sharedMesh == null)
+                continue;
+            if (bakedHouses != null && mf.transform.IsChildOf(bakedHouses))
+                continue;
+            if (exitRamp != null && mf.transform.IsChildOf(exitRamp))
                 continue;
 
             if (IsReplacedBuilding(mf.gameObject.name))
@@ -122,7 +150,7 @@ public class CedyniaWorld : MonoBehaviour
             {
                 live = Instantiate(mf.sharedMesh);
                 live.name = mf.sharedMesh.name + "_walk";
-                EnsureUVs(live, ObjectTile(mf.gameObject.name));
+                EnsureUVs(live, ObjectTile(mf.gameObject.name), mf.gameObject.name);
                 mf.sharedMesh = live;
             }
 
@@ -136,16 +164,107 @@ public class CedyniaWorld : MonoBehaviour
             col.sharedMesh = live;
         }
 
-        if (gord.transform.Find("Chaty_Slowianskie") == null)
-            CedyniaSlavicBuildings.Replace(gord, mats.logWood, mats.thatchMoss, mats.woodDark);
+        if (bakedHouses != null && bakedHouses.childCount > 0)
+            CedyniaSlavicBuildings.KeepExisting(bakedHouses.gameObject);
         else
-            CedyniaSlavicBuildings.HideOriginals(gord);
+            CedyniaSlavicBuildings.Replace(gord, mats.logWood, mats.thatchMoss, mats.woodDark);
+
+        CedyniaSlavicBuildings.HideOriginals(gord);
+        OpenExitThroughGate(gord);
+        if (FindDeep(gord.transform, "Most_wyjscia") == null)
+            CedyniaSlavicBuildings.BuildExitRamp(gord, mats.wood);
         return gord;
+    }
+
+    static void OpenExitThroughGate(GameObject gord)
+    {
+        Vector3 gate = new Vector3(-0.33f, 0f, -2.0f);
+        Vector3 dir = gate.normalized;
+        var built = FindDeep(gord.transform, "Chaty_Slowianskie");
+        if (built == null)
+        {
+            var sceneHouses = GameObject.Find("Chaty_Slowianskie");
+            if (sceneHouses != null)
+                built = sceneHouses.transform;
+        }
+
+        foreach (var mf in gord.GetComponentsInChildren<MeshFilter>())
+        {
+            if (mf.sharedMesh == null)
+                continue;
+            if (built != null && mf.transform.IsChildOf(built))
+                continue;
+
+            string n = mf.gameObject.name.ToLowerInvariant();
+            bool wall = n.Contains("palisade");
+            if (!wall)
+                continue;
+
+            if (!mf.sharedMesh.isReadable)
+            {
+                var blocked = mf.GetComponent<Collider>();
+                if (blocked != null)
+                    blocked.enabled = false;
+                continue;
+            }
+
+            Mesh cut = CutPassageMesh(mf.sharedMesh, dir, 1.1f, 5.2f, 0.32f);
+            mf.sharedMesh = cut;
+            var col = mf.GetComponent<MeshCollider>();
+            if (col != null)
+                col.sharedMesh = cut;
+        }
+    }
+
+    static Mesh CutPassageMesh(Mesh src, Vector3 dir, float alongMin, float alongMax, float halfWidth)
+    {
+        var verts = src.vertices;
+        var tris = src.triangles;
+        var keep = new System.Collections.Generic.List<int>(tris.Length);
+        for (int i = 0; i < tris.Length; i += 3)
+        {
+            Vector3 a = verts[tris[i]];
+            Vector3 b = verts[tris[i + 1]];
+            Vector3 c = verts[tris[i + 2]];
+            Vector3 mid = (a + b + c) / 3f;
+            Vector3 flat = new Vector3(mid.x, 0f, mid.z);
+            float along = Vector3.Dot(flat, dir);
+            float side = (flat - dir * along).magnitude;
+            if (along > alongMin && along < alongMax && side < halfWidth)
+                continue;
+            keep.Add(tris[i]);
+            keep.Add(tris[i + 1]);
+            keep.Add(tris[i + 2]);
+        }
+
+        var mesh = Instantiate(src);
+        mesh.name = src.name + "_exit";
+        mesh.triangles = keep.ToArray();
+        mesh.RecalculateBounds();
+        mesh.RecalculateNormals();
+        return mesh;
+    }
+
+    static Transform FindDeep(Transform root, string name)
+    {
+        if (root == null)
+            return null;
+        if (root.name == name)
+            return root;
+        foreach (Transform child in root)
+        {
+            var found = FindDeep(child, name);
+            if (found != null)
+                return found;
+        }
+        return null;
     }
 
     static bool IsReplacedBuilding(string name)
     {
         string n = name.ToLowerInvariant();
+        if (n.Contains("chata") || n.Contains("brama") || n.Contains("chaty"))
+            return false;
         return n.StartsWith("hut") || n.Contains("gatetower") || n == "gate";
     }
 
@@ -191,14 +310,17 @@ public class CedyniaWorld : MonoBehaviour
         return mats.earth;
     }
 
-    static void EnsureUVs(Mesh mesh, float tile)
+    static void EnsureUVs(Mesh mesh, float tile, string objectName = "")
     {
         var verts = mesh.vertices;
         if (verts == null || verts.Length == 0)
             return;
 
+        string n = objectName.ToLowerInvariant();
+        bool forceTriplanar = n.Contains("ground") || n.Contains("rampart");
+
         var existing = mesh.uv;
-        if (existing != null && existing.Length == verts.Length)
+        if (!forceTriplanar && existing != null && existing.Length == verts.Length)
         {
             for (int i = 0; i < existing.Length; i++)
             {
@@ -207,14 +329,20 @@ public class CedyniaWorld : MonoBehaviour
             }
         }
 
+        ApplyTriplanarUVs(mesh, tile);
+    }
+
+    static void ApplyTriplanarUVs(Mesh mesh, float tile)
+    {
+        var verts = mesh.vertices;
         var norms = mesh.normals;
         bool hasN = norms != null && norms.Length == verts.Length;
         var uv = new Vector2[verts.Length];
         for (int i = 0; i < verts.Length; i++)
         {
             Vector3 p = verts[i];
-            Vector3 n = hasN ? norms[i] : Vector3.up;
-            Vector3 a = new Vector3(Mathf.Abs(n.x), Mathf.Abs(n.y), Mathf.Abs(n.z));
+            Vector3 nn = hasN ? norms[i] : Vector3.up;
+            Vector3 a = new Vector3(Mathf.Abs(nn.x), Mathf.Abs(nn.y), Mathf.Abs(nn.z));
             if (a.y >= a.x && a.y >= a.z)
                 uv[i] = new Vector2(p.x, p.z) * tile;
             else if (a.x >= a.z)
@@ -227,35 +355,60 @@ public class CedyniaWorld : MonoBehaviour
 
     public static float RiverX(float z)
     {
-        return -60f + 13f * Mathf.Sin(z * 0.03f) + 5f * Mathf.Sin(z * 0.071f + 0.8f);
+        float far = -72f;
+        float join = -MoatRadius;
+        float t = 1f - Mathf.SmoothStep(0f, 90f, Mathf.Abs(z));
+        return Mathf.Lerp(far, join, t);
+    }
+
+    public static float DistToWater(float x, float z)
+    {
+        float d = Mathf.Sqrt(x * x + z * z);
+        float toRiver = Mathf.Abs(x - RiverX(z));
+        float toMoat = Mathf.Abs(d - MoatRadius);
+        if (d < GordRadius)
+            return Mathf.Min(toRiver, toMoat);
+        return toRiver;
     }
 
     public static float SampleHeight(float x, float z)
     {
         float d = Mathf.Sqrt(x * x + z * z);
-        float hills = (Mathf.PerlinNoise(x * 0.018f + 20f, z * 0.018f) - 0.5f) * 1.1f
-                      + (Mathf.PerlinNoise(x * 0.007f + 8f, z * 0.007f) - 0.42f) * 2.2f;
-        float h = Mathf.Max(-0.15f, hills);
+        if (d < GordRadius - 2f)
+            return GroundY;
 
-        if (d < GordRadius - 1.2f)
-            return -0.22f;
+        float rd = DistToWater(x, z);
+        if (rd >= BankWidth)
+            return GroundY;
+        float t = Mathf.SmoothStep(0f, 1f, rd / BankWidth);
+        return Mathf.Lerp(GroundY - RiverDrop, GroundY, t);
+    }
 
-        if (d < GordRadius + 12f)
+    static void FlattenMound(Mesh mesh, string objectName)
+    {
+        string n = objectName.ToLowerInvariant();
+        var v = mesh.vertices;
+        if (v == null || v.Length == 0)
+            return;
+
+        if (n.Contains("chata") || n.Contains("brama") || n.Contains("bale") || n.Contains("strzecha") || n.Contains("detal") || n.Contains("most"))
+            return;
+
+        if (n.Contains("ground") || n.Contains("rampart"))
         {
-            float t = Mathf.InverseLerp(GordRadius - 1.2f, GordRadius + 12f, d);
-            t = t * t * (3f - 2f * t);
-            h = Mathf.Lerp(-0.22f, h, t);
+            for (int i = 0; i < v.Length; i++)
+                v[i].y = GroundY / GordScale;
+        }
+        else if (!n.Contains("moat") && !n.Contains("water"))
+        {
+            const float drop = 1.30f;
+            for (int i = 0; i < v.Length; i++)
+                v[i].y -= drop;
         }
 
-        float rd = Mathf.Abs(x - RiverX(z));
-        float riverW = 9.5f + 2.4f * Mathf.Sin(z * 0.045f);
-        if (rd < riverW + 12f)
-        {
-            float valley = 1f - Mathf.SmoothStep(riverW * 0.4f, riverW + 12f, rd);
-            h -= valley * 2.5f;
-        }
-
-        return h;
+        mesh.vertices = v;
+        mesh.RecalculateBounds();
+        mesh.RecalculateNormals();
     }
 
     void BuildLandscape(Mats mats)
@@ -278,8 +431,8 @@ public class CedyniaWorld : MonoBehaviour
                 verts[i] = new Vector3(wx, wy, wz);
                 uv[i] = new Vector2(wx, wz) * 0.085f;
 
-                float rd = Mathf.Abs(wx - RiverX(wz));
-                if (rd < 16f && wy < 0.15f)
+                float rd = DistToWater(wx, wz);
+                if (rd < 14f && wy < 0.12f)
                     colors[i] = new Color(0.85f, 0.8f, 0.7f);
                 else
                     colors[i] = Color.white;
@@ -287,11 +440,22 @@ public class CedyniaWorld : MonoBehaviour
         }
 
         int t = 0;
+        float hole = GordRadius - 3f;
         for (int z = 0; z < res; z++)
         {
             for (int x = 0; x < res; x++)
             {
                 int i = z * (res + 1) + x;
+                Vector3 a = verts[i];
+                Vector3 b = verts[i + res + 1];
+                Vector3 c = verts[i + 1];
+                Vector3 d = verts[i + res + 2];
+                float ra = Mathf.Sqrt(a.x * a.x + a.z * a.z);
+                float rb = Mathf.Sqrt(b.x * b.x + b.z * b.z);
+                float rc = Mathf.Sqrt(c.x * c.x + c.z * c.z);
+                float rd2 = Mathf.Sqrt(d.x * d.x + d.z * d.z);
+                if (ra < hole && rb < hole && rc < hole && rd2 < hole)
+                    continue;
                 tris[t++] = i;
                 tris[t++] = i + res + 1;
                 tris[t++] = i + 1;
@@ -300,6 +464,7 @@ public class CedyniaWorld : MonoBehaviour
                 tris[t++] = i + res + 2;
             }
         }
+        System.Array.Resize(ref tris, t);
 
         var mesh = new Mesh { name = "Krajobraz", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
         mesh.vertices = verts;
@@ -308,6 +473,7 @@ public class CedyniaWorld : MonoBehaviour
         mesh.triangles = tris;
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
+        ApplyTriplanarUVs(mesh, 0.085f);
 
         var go = new GameObject("Krajobraz");
         go.transform.SetParent(transform, false);
@@ -319,7 +485,7 @@ public class CedyniaWorld : MonoBehaviour
 
     void BuildRiver(Mats mats)
     {
-        const int segs = 90;
+        const int segs = 120;
         const int across = 7;
         float half = WorldSize * 0.5f;
         var verts = new Vector3[(segs + 1) * (across + 1)];
@@ -330,18 +496,21 @@ public class CedyniaWorld : MonoBehaviour
         {
             float z = Mathf.Lerp(-half, half, i / (float)segs);
             float cx = RiverX(z);
-            float width = 10.5f + 2.6f * Mathf.Sin(z * 0.045f);
-            Vector3 center = new Vector3(cx, -1.05f, z);
-            float dx = RiverX(z + 1.2f) - RiverX(z - 1.2f);
-            Vector3 tangent = new Vector3(dx, 0f, 2.4f).normalized;
+            float d = Mathf.Sqrt(cx * cx + z * z);
+            float width = d < GordRadius
+                ? 7.2f
+                : 10.5f + 2.6f * Mathf.Sin(z * 0.045f);
+            float dx = RiverX(z + 1.4f) - RiverX(z - 1.4f);
+            Vector3 tangent = new Vector3(dx, 0f, 2.8f).normalized;
             Vector3 side = Vector3.Cross(Vector3.up, tangent).normalized;
+            Vector3 center = new Vector3(cx, WaterY, z);
 
             for (int a = 0; a <= across; a++)
             {
                 float u = a / (float)across;
                 int idx = i * (across + 1) + a;
                 verts[idx] = center + side * Mathf.Lerp(-width, width, u);
-                verts[idx].y = -1.05f;
+                verts[idx].y = WaterY;
                 uv[idx] = new Vector2(u * 2f, i / (float)segs * 18f);
             }
         }
@@ -374,6 +543,63 @@ public class CedyniaWorld : MonoBehaviour
         var rend = go.AddComponent<MeshRenderer>();
         rend.sharedMaterial = mats.water;
         rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        BuildMoatRing(mats.water);
+    }
+
+    void BuildMoatRing(Material water)
+    {
+        const int segs = 72;
+        const int across = 5;
+        float inner = MoatRadius - 6.5f;
+        float outer = MoatRadius + 6.5f;
+        var verts = new Vector3[(segs + 1) * (across + 1)];
+        var uv = new Vector2[verts.Length];
+        var tris = new int[segs * across * 6];
+
+        for (int i = 0; i <= segs; i++)
+        {
+            float ang = i / (float)segs * Mathf.PI * 2f;
+            float ca = Mathf.Cos(ang);
+            float sa = Mathf.Sin(ang);
+            for (int a = 0; a <= across; a++)
+            {
+                float u = a / (float)across;
+                float r = Mathf.Lerp(inner, outer, u);
+                int idx = i * (across + 1) + a;
+                verts[idx] = new Vector3(ca * r, WaterY, sa * r);
+                uv[idx] = new Vector2(u * 2f, i / (float)segs * 8f);
+            }
+        }
+
+        int t = 0;
+        for (int i = 0; i < segs; i++)
+        {
+            for (int a = 0; a < across; a++)
+            {
+                int i0 = i * (across + 1) + a;
+                tris[t++] = i0;
+                tris[t++] = i0 + across + 1;
+                tris[t++] = i0 + 1;
+                tris[t++] = i0 + 1;
+                tris[t++] = i0 + across + 1;
+                tris[t++] = i0 + across + 2;
+            }
+        }
+
+        var mesh = new Mesh { name = "Fosa" };
+        mesh.vertices = verts;
+        mesh.uv = uv;
+        mesh.triangles = tris;
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+
+        var go = new GameObject("Fosa_woda");
+        go.transform.SetParent(transform, false);
+        go.AddComponent<MeshFilter>().sharedMesh = mesh;
+        var rend = go.AddComponent<MeshRenderer>();
+        rend.sharedMaterial = water;
+        rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
     }
 
     void BuildForest(Mats mats)
@@ -388,13 +614,13 @@ public class CedyniaWorld : MonoBehaviour
         {
             attempts++;
             float ang = Random.Range(0f, Mathf.PI * 2f);
-            float r = Mathf.Lerp(GordRadius + 9f, 158f, Mathf.Pow(Random.value, 0.62f));
+            float r = Mathf.Lerp(GordRadius + 22f, 158f, Mathf.Pow(Random.value, 0.62f));
             float x = Mathf.Cos(ang) * r;
             float z = Mathf.Sin(ang) * r;
-            if (Mathf.Abs(x - RiverX(z)) < 15f)
+            if (DistToWater(x, z) < 18f)
                 continue;
             float h = SampleHeight(x, z);
-            if (h < 0.08f)
+            if (h < GroundY - 0.01f)
                 continue;
 
             bool pine = Random.value > 0.38f;
@@ -404,6 +630,30 @@ public class CedyniaWorld : MonoBehaviour
         }
 
         StaticBatchingUtility.Combine(root);
+    }
+
+    void BuildWorldBounds()
+    {
+        float half = WorldSize * 0.5f;
+        float wallH = 90f;
+        float thick = 6f;
+        var root = new GameObject("Granice_swiata");
+        root.transform.SetParent(transform, false);
+
+        AddBoundWall(root.transform, new Vector3(half + thick * 0.5f, wallH * 0.5f, 0f), new Vector3(thick, wallH, WorldSize + thick * 2f));
+        AddBoundWall(root.transform, new Vector3(-half - thick * 0.5f, wallH * 0.5f, 0f), new Vector3(thick, wallH, WorldSize + thick * 2f));
+        AddBoundWall(root.transform, new Vector3(0f, wallH * 0.5f, half + thick * 0.5f), new Vector3(WorldSize + thick * 2f, wallH, thick));
+        AddBoundWall(root.transform, new Vector3(0f, wallH * 0.5f, -half - thick * 0.5f), new Vector3(WorldSize + thick * 2f, wallH, thick));
+        AddBoundWall(root.transform, new Vector3(0f, FlyMaxY + 2f, 0f), new Vector3(WorldSize + 8f, 4f, WorldSize + 8f));
+    }
+
+    static void AddBoundWall(Transform parent, Vector3 pos, Vector3 size)
+    {
+        var go = new GameObject("Sciana");
+        go.transform.SetParent(parent, false);
+        go.transform.position = pos;
+        var box = go.AddComponent<BoxCollider>();
+        box.size = size;
     }
 
     void CachePrimitives()
@@ -504,13 +754,29 @@ public class CedyniaWorld : MonoBehaviour
     void SpawnPlayer(GameObject gord)
     {
         Vector3 guess = new Vector3(0f, 28f, 2f);
+        Vector3 lookTarget = guess + Vector3.forward;
         if (gord != null)
-            guess = gord.transform.TransformPoint(new Vector3(0.15f, 3.2f, 0.35f));
+        {
+            var houses = FindDeep(gord.transform, "Chaty_Slowianskie");
+            Transform chata = houses != null ? houses.Find("Chata_1") : null;
+            if (chata == null && houses != null && houses.childCount > 0)
+                chata = houses.GetChild(0);
+            if (chata != null)
+            {
+                guess = chata.position + gord.transform.TransformDirection(new Vector3(-0.35f, 0.8f, 0.15f));
+                lookTarget = chata.position;
+            }
+            else
+            {
+                guess = gord.transform.TransformPoint(new Vector3(0.15f, 1.55f, 0.35f));
+                lookTarget = gord.transform.TransformPoint(new Vector3(1.23f, 1.4f, 1.51f));
+            }
+        }
 
-        if (Physics.Raycast(guess + Vector3.up * 20f, Vector3.down, out RaycastHit hit, 80f))
+        if (Physics.Raycast(guess + Vector3.up * 8f, Vector3.down, out RaycastHit hit, 40f))
             spawnPoint = hit.point;
         else
-            spawnPoint = new Vector3(guess.x, SampleHeight(guess.x, guess.z) + 0.1f, guess.z);
+            spawnPoint = guess;
 
         var player = new GameObject("Gracz");
         player.tag = "Player";
@@ -520,8 +786,8 @@ public class CedyniaWorld : MonoBehaviour
         cc.height = 1.8f;
         cc.radius = 0.32f;
         cc.center = new Vector3(0f, 0.9f, 0f);
-        cc.slopeLimit = 55f;
-        cc.stepOffset = 0.4f;
+        cc.slopeLimit = 80f;
+        cc.stepOffset = 0.55f;
         cc.minMoveDistance = 0f;
         cc.skinWidth = 0.06f;
 
@@ -534,6 +800,11 @@ public class CedyniaWorld : MonoBehaviour
         cam.farClipPlane = 420f;
         cam.fieldOfView = 68f;
         camGo.AddComponent<AudioListener>();
+
+        Vector3 look = lookTarget - spawnPoint;
+        look.y = 0f;
+        if (look.sqrMagnitude > 0.01f)
+            player.transform.rotation = Quaternion.LookRotation(look);
 
         var walker = player.AddComponent<FirstPersonWalker>();
         walker.BindEyes(camGo.transform);

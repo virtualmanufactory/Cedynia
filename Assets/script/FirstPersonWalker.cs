@@ -5,17 +5,19 @@ public class FirstPersonWalker : MonoBehaviour
 {
     public float walkSpeed = 3.6f;
     public float runSpeed = 6.4f;
+    public float flySpeed = 12f;
+    public float flyFastSpeed = 28f;
     public float lookSensitivity = 2.1f;
     public float gravity = 22f;
     public float jumpSpeed = 5.2f;
-    public float maxPitch = 85f;
+    public float maxPitch = 89f;
 
     CharacterController controller;
     Transform eyes;
     float pitch;
     float verticalVelocity;
     Vector3 spawnPoint;
-    bool showHelp = true;
+    bool flying;
     float helpUntil;
 
     public void BindEyes(Transform cameraTransform)
@@ -27,7 +29,7 @@ public class FirstPersonWalker : MonoBehaviour
     {
         controller = GetComponent<CharacterController>();
         spawnPoint = transform.position;
-        helpUntil = Time.time + 10f;
+        helpUntil = Time.time + 16f;
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
@@ -41,6 +43,9 @@ public class FirstPersonWalker : MonoBehaviour
             Cursor.visible = locked;
         }
 
+        if (Input.GetKeyDown(KeyCode.F))
+            SetFlying(!flying);
+
         if (Cursor.lockState == CursorLockMode.Locked && eyes != null)
         {
             float mx = Input.GetAxis("Mouse X") * lookSensitivity;
@@ -49,6 +54,80 @@ public class FirstPersonWalker : MonoBehaviour
             pitch = Mathf.Clamp(pitch - my, -maxPitch, maxPitch);
             eyes.localRotation = Quaternion.Euler(pitch, 0f, 0f);
         }
+
+        if (flying)
+            FlyMove();
+        else
+            WalkMove();
+
+        ClampToWorld();
+
+        if (!flying && transform.position.y < -25f)
+        {
+            controller.enabled = false;
+            transform.position = spawnPoint;
+            verticalVelocity = 0f;
+            controller.enabled = true;
+        }
+    }
+
+    void ClampToWorld()
+    {
+        Vector3 p = transform.position;
+        float lim = CedyniaWorld.WorldLimit;
+        p.x = Mathf.Clamp(p.x, -lim, lim);
+        p.z = Mathf.Clamp(p.z, -lim, lim);
+        p.y = Mathf.Clamp(p.y, -1.2f, CedyniaWorld.FlyMaxY);
+        if ((p - transform.position).sqrMagnitude < 0.000001f)
+            return;
+
+        bool was = controller.enabled;
+        controller.enabled = false;
+        transform.position = p;
+        controller.enabled = was;
+    }
+
+    void SetFlying(bool on)
+    {
+        flying = on;
+        verticalVelocity = 0f;
+        if (!controller.enabled)
+            controller.enabled = true;
+    }
+
+    void FlyMove()
+    {
+        if (!controller.enabled)
+            controller.enabled = true;
+
+        Vector3 dir = Vector3.zero;
+        if (eyes != null)
+        {
+            dir += eyes.forward * Input.GetAxis("Vertical");
+            dir += eyes.right * Input.GetAxis("Horizontal");
+        }
+        else
+        {
+            dir += transform.forward * Input.GetAxis("Vertical");
+            dir += transform.right * Input.GetAxis("Horizontal");
+        }
+
+        if (Input.GetKey(KeyCode.Space) || Input.GetKey(KeyCode.E))
+            dir += Vector3.up;
+        if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.Q) || Input.GetKey(KeyCode.C))
+            dir += Vector3.down;
+
+        if (dir.sqrMagnitude > 1f)
+            dir.Normalize();
+
+        float speed = Input.GetKey(KeyCode.LeftShift) ? flyFastSpeed : flySpeed;
+        controller.Move(dir * speed * Time.deltaTime);
+    }
+
+    void WalkMove()
+    {
+        if (!controller.enabled)
+            controller.enabled = true;
 
         Vector3 input = new Vector3(Input.GetAxis("Horizontal"), 0f, Input.GetAxis("Vertical"));
         if (input.sqrMagnitude > 1f)
@@ -70,17 +149,6 @@ public class FirstPersonWalker : MonoBehaviour
 
         move.y = verticalVelocity;
         controller.Move(move * Time.deltaTime);
-
-        if (transform.position.y < -25f)
-        {
-            controller.enabled = false;
-            transform.position = spawnPoint;
-            verticalVelocity = 0f;
-            controller.enabled = true;
-        }
-
-        if (showHelp && Time.time > helpUntil)
-            showHelp = false;
     }
 
     public void RememberSpawn(Vector3 point)
@@ -90,17 +158,24 @@ public class FirstPersonWalker : MonoBehaviour
 
     void OnGUI()
     {
-        if (!showHelp)
-            return;
-
-        var style = new GUIStyle(GUI.skin.label)
+        var hint = new GUIStyle(GUI.skin.label)
         {
-            fontSize = 16,
+            fontSize = 15,
             fontStyle = FontStyle.Bold
         };
-        style.normal.textColor = Color.white;
-        GUI.Label(new Rect(18, 16, 640, 70),
-            "WASD — chodzenie    Mysz — rozglądanie\nShift — bieg    Spacja — skok    Esc — kursor",
-            style);
+        hint.normal.textColor = Color.white;
+
+        string flyState = flying ? "latanie WŁĄCZONE" : "latanie wyłączone";
+        GUI.Label(new Rect(18, 14, 720, 28), "F — " + flyState, hint);
+
+        if (Time.time > helpUntil)
+            return;
+
+        GUI.Label(new Rect(18, 42, 720, 90),
+            "WASD — ruch    Mysz — rozglądanie    Shift — szybciej\n" +
+            "Spacja / E — góra (lot)    Ctrl / Q — dół    Esc — kursor\n" +
+            "Wyjdź z grodu przez bramę (most) albo leć nad palisadą (F).\n" +
+            "Latanie nie przechodzi przez ściany, chaty i teren.",
+            hint);
     }
 }
