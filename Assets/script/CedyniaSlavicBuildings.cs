@@ -3,25 +3,116 @@ using UnityEngine;
 
 public static class CedyniaSlavicBuildings
 {
-    public static void Replace(GameObject gord, Material logWood, Material thatch, Material darkWood)
+    public static int Replace(GameObject gord, Material logWood, Material thatch, Material darkWood)
     {
-        if (gord == null)
-            return;
+        if (gord == null || logWood == null || thatch == null || darkWood == null)
+        {
+            Debug.LogWarning("Cedynia: brak grodziska albo materialow — nie wstawiono chat.");
+            return 0;
+        }
+
+        HideOriginals(gord);
+
+        Transform existing = gord.transform.Find("Chaty_Slowianskie");
+        if (existing != null)
+        {
+            if (Application.isPlaying)
+                Object.Destroy(existing.gameObject);
+            else
+                Object.DestroyImmediate(existing.gameObject);
+        }
 
         var root = new GameObject("Chaty_Slowianskie");
         root.transform.SetParent(gord.transform, false);
 
+        int built = 0;
+        foreach (var spec in HouseLayout)
+        {
+            Vector3 axis = spec.axis;
+            axis.y = 0f;
+            if (axis.sqrMagnitude < 0.0001f)
+                axis = Vector3.forward;
+            axis.Normalize();
+
+            Vector3 right = Vector3.Cross(Vector3.up, axis);
+            bool doorOnPlusX = Vector3.Dot(right, -new Vector3(spec.pos.x, 0f, spec.pos.z)) > 0f;
+
+            var house = BuildLogHouse(spec.length, spec.width, 0.32f, 0.030f, doorOnPlusX, true, logWood, thatch, darkWood);
+            house.name = spec.name;
+            house.transform.SetParent(root.transform, false);
+            house.transform.localPosition = spec.pos;
+            house.transform.localRotation = Quaternion.LookRotation(axis, Vector3.up);
+
+            var box = house.AddComponent<BoxCollider>();
+            box.center = new Vector3(0f, 0.24f, 0f);
+            box.size = new Vector3(spec.width + 0.08f, 0.48f, spec.length + 0.08f);
+            built++;
+        }
+
+        Vector3 gatePos = new Vector3(-0.33f, 1.278f, -2.00f);
+        Vector3 outward = new Vector3(gatePos.x, 0f, gatePos.z).normalized;
+        var gate = BuildGatehouse(1.10f, 0.78f, 0.38f, 0.36f, 0.030f, logWood, thatch, darkWood);
+        gate.name = "Brama_zrebowa";
+        gate.transform.SetParent(root.transform, false);
+        gate.transform.localPosition = gatePos;
+        gate.transform.localRotation = Quaternion.LookRotation(outward, Vector3.up);
+        built++;
+
+        Debug.Log("Cedynia: wstawiono " + built + " budynkow zrebowych (6 chat + brama).");
+        return built;
+    }
+
+    public static void HideOriginals(GameObject gord)
+    {
         foreach (var mf in gord.GetComponentsInChildren<MeshFilter>(true))
         {
-            string n = mf.gameObject.name.ToLowerInvariant();
-            if (mf.sharedMesh == null)
+            if (mf == null)
                 continue;
-            if (n.StartsWith("hut"))
-                BuildHouseFromOriginal(root.transform, mf, logWood, thatch, darkWood);
-            else if (n.Contains("gatetower") || n == "gate")
-                BuildGateFromOriginal(root.transform, mf, logWood, thatch, darkWood);
+            if (mf.transform.root != gord.transform && mf.transform != gord.transform && !mf.transform.IsChildOf(gord.transform))
+                continue;
+            var alreadyBuilt = gord.transform.Find("Chaty_Slowianskie");
+            if (alreadyBuilt != null && mf.transform.IsChildOf(alreadyBuilt))
+                continue;
+
+            string n = (mf.gameObject.name + " " + (mf.sharedMesh != null ? mf.sharedMesh.name : "")).ToLowerInvariant();
+            bool hutOrGate = n.Contains("hut") || n.Contains("gate") || n.Contains("brama") || n.Contains("chata");
+            if (!hutOrGate && mf.sharedMesh != null && mf.sharedMesh.vertexCount > 0 && mf.sharedMesh.vertexCount <= 40)
+            {
+                Vector3 c = mf.transform.TransformPoint(mf.sharedMesh.bounds.center);
+                Vector3 local = gord.transform.InverseTransformPoint(c);
+                if (local.y > 1.1f && new Vector2(local.x, local.z).magnitude < 2.4f)
+                    hutOrGate = true;
+            }
+
+            if (!hutOrGate)
+                continue;
+
+            var rend = mf.GetComponent<MeshRenderer>();
+            if (rend != null)
+                rend.enabled = false;
+            foreach (var col in mf.GetComponents<Collider>())
+                col.enabled = false;
         }
     }
+
+    struct HouseSpec
+    {
+        public string name;
+        public Vector3 pos;
+        public Vector3 axis;
+        public float length;
+        public float width;
+    }
+
+    static readonly HouseSpec[] HouseLayout =
+    {
+        new HouseSpec { name = "Chata_1", pos = new Vector3(1.232f, 1.344f, 1.512f), axis = new Vector3(-0.757f, 0f, 0.231f), length = 0.88f, width = 0.60f },
+        new HouseSpec { name = "Chata_2", pos = new Vector3(-1.078f, 1.346f, -1.379f), axis = new Vector3(-0.476f, 0f, 0.478f), length = 0.82f, width = 0.56f },
+        new HouseSpec { name = "Chata_3", pos = new Vector3(-1.379f, 1.341f, -0.448f), axis = new Vector3(-0.166f, 0f, 0.698f), length = 0.76f, width = 0.52f },
+        new HouseSpec { name = "Chata_4", pos = new Vector3(-1.496f, 1.344f, 0.697f), axis = new Vector3(0.279f, 0f, 0.659f), length = 0.76f, width = 0.52f },
+        new HouseSpec { name = "Chata_5", pos = new Vector3(-0.900f, 1.348f, 1.559f), axis = new Vector3(0.590f, 0f, 0.457f), length = 0.76f, width = 0.54f },
+        new HouseSpec { name = "Chata_6", pos = new Vector3(0.131f, 1.338f, 1.494f), axis = new Vector3(0.710f, 0f, 0.033f), length = 0.82f, width = 0.52f }
+    };
 
     static void BuildHouseFromOriginal(Transform parent, MeshFilter original, Material logWood, Material thatch, Material darkWood)
     {

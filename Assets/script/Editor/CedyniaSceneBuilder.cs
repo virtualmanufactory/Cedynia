@@ -15,6 +15,7 @@ public static class CedyniaSceneBuilder
     static CedyniaSceneBuilder()
     {
         EditorApplication.delayCall += TryBuild;
+        EditorApplication.delayCall += TryPlaceHouses;
     }
 
     [MenuItem("Cedynia/Zbuduj scene grodziska")]
@@ -23,6 +24,20 @@ public static class CedyniaSceneBuilder
         if (File.Exists(MarkerPath))
             File.Delete(MarkerPath);
         Build();
+        TryPlaceHouses();
+    }
+
+    [MenuItem("Cedynia/Wstaw chaty zrebowe i brame")]
+    public static void PlaceHousesMenu()
+    {
+        var gord = GameObject.Find("Grodzisko_Cedynia");
+        if (gord != null)
+        {
+            var old = gord.transform.Find("Chaty_Slowianskie");
+            if (old != null)
+                Object.DestroyImmediate(old.gameObject);
+        }
+        TryPlaceHouses();
     }
 
     static void TryBuild()
@@ -104,7 +119,58 @@ public static class CedyniaSceneBuilder
         WriteIfMissing(TexDir + "/bark.png", () => CedyniaTextures.Bark(256));
         WriteIfMissing(TexDir + "/leaves.png", () => CedyniaTextures.Leaves(256));
         WriteIfMissing(TexDir + "/sand.png", () => CedyniaTextures.Sand(256));
+        WriteIfMissing(TexDir + "/logwood.png", () => CedyniaTextures.LogWood(512));
+        WriteIfMissing(TexDir + "/thatch_moss.png", () => CedyniaTextures.MossThatch(512));
         AssetDatabase.Refresh();
+    }
+
+    static void TryPlaceHouses()
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode)
+            return;
+        if (!File.Exists(ScenePath))
+            return;
+
+        var scene = EditorSceneManager.GetActiveScene();
+        if (scene.path != ScenePath)
+            scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+
+        var gord = GameObject.Find("Grodzisko_Cedynia");
+        if (gord == null)
+            return;
+        if (gord.transform.Find("Chaty_Slowianskie") != null)
+            return;
+
+        EnsureTextures();
+        var logWood = GetOrCreateMat("Assets/Resources/Cedynia/LogWood.mat", "logwood", new Color(0.92f, 0.84f, 0.68f), 0.22f);
+        var thatch = GetOrCreateMat("Assets/Resources/Cedynia/ThatchMoss.mat", "thatch_moss", Color.white, 0.10f);
+        var dark = GetOrCreateMat("Assets/Resources/Cedynia/WoodDark.mat", "wood_dark", Color.white, 0.24f);
+
+        CedyniaSlavicBuildings.Replace(gord, logWood, thatch, dark);
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene);
+        Debug.Log("Cedynia: chaty zrebowe i brama sa w scenie (widoczne bez Play).");
+    }
+
+    static Material GetOrCreateMat(string path, string textureName, Color tint, float gloss)
+    {
+        var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (mat == null)
+        {
+            mat = new Material(Shader.Find("Standard"));
+            AssetDatabase.CreateAsset(mat, path);
+        }
+
+        var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(TexDir + "/" + textureName + ".png");
+        if (tex == null)
+            tex = Resources.Load<Texture2D>("Cedynia/" + textureName);
+        mat.shader = Shader.Find("Standard");
+        mat.mainTexture = tex;
+        mat.color = tint;
+        mat.SetFloat("_Glossiness", gloss);
+        mat.SetFloat("_Metallic", 0f);
+        EditorUtility.SetDirty(mat);
+        return mat;
     }
 
     static void WriteIfMissing(string path, System.Func<Texture2D> factory)

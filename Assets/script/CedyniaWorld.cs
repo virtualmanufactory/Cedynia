@@ -136,7 +136,10 @@ public class CedyniaWorld : MonoBehaviour
             col.sharedMesh = live;
         }
 
-        CedyniaSlavicBuildings.Replace(gord, mats.logWood, mats.thatchMoss, mats.woodDark);
+        if (gord.transform.Find("Chaty_Slowianskie") == null)
+            CedyniaSlavicBuildings.Replace(gord, mats.logWood, mats.thatchMoss, mats.woodDark);
+        else
+            CedyniaSlavicBuildings.HideOriginals(gord);
         return gord;
     }
 
