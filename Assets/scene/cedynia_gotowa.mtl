@@ -1,0 +1,222 @@
+# Blender 5.2.1 LTS MTL File: 'cedynia_gotowa.blend'
+# www.blender.org
+
+newmtl Belki_i_drzwi
+Ns 39.999996
+Ka 1.000000 1.000000 1.000000
+Kd 0.095000 0.043000 0.018000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/wood_dark.png
+
+newmtl Brzegi_rzek_|_piasek_i_mul_|_faktura
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.130000 0.115000 0.067000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/sand.png
+
+newmtl Delikatne_refleksy_rzeki
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.150000 0.360000 0.360000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/water.png
+
+newmtl Drewno_|_cieply_dab
+Ns 39.999996
+Ka 1.000000 1.000000 1.000000
+Kd 0.240000 0.115000 0.047000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/logwood.png
+
+newmtl Gont_0
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.200000 0.180000 0.130000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/wood_dark.png
+
+newmtl Gont_1
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.225000 0.202000 0.148000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/wood_dark.png
+
+newmtl Gont_2
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.250000 0.224000 0.166000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/wood.png
+
+newmtl Gont_3
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.275000 0.246000 0.184000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/wood.png
+
+newmtl Kamien_|_faktura
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.180000 0.185000 0.170000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/sand.png
+
+newmtl Laka_|_faktura
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.075000 0.110000 0.035000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/grass.png
+
+newmtl Liscie
+Ns 39.999996
+Ka 1.000000 1.000000 1.000000
+Kd 0.120000 0.230000 0.065000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/leaves.png
+
+newmtl Naturalna_strzecha
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.200000 0.140000 0.064000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/thatch_moss.png
+
+newmtl Postarzale_slupy
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.090000 0.067000 0.036000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/wood_dark.png
+
+newmtl Stare_deski_0
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.130000 0.077000 0.033000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/logwood.png
+
+newmtl Stare_deski_1
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.143000 0.085000 0.038000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/logwood.png
+
+newmtl Stare_deski_2
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.156000 0.093000 0.043000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/wood.png
+
+newmtl Stare_deski_3
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.169000 0.101000 0.048000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/wood.png
+
+newmtl Trzciny
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.300000 0.360000 0.100000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/thatch.png
+
+newmtl Ubita_ziemia_|_faktura
+Ns 22.499992
+Ka 1.000000 1.000000 1.000000
+Kd 0.160000 0.105000 0.056000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/earth.png
+
+newmtl Woda_fosy
+Ns 518.400024
+Ka 1.000000 1.000000 1.000000
+Kd 0.028000 0.090000 0.073000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 2
+map_Kd ../Resources/Cedynia/water.png

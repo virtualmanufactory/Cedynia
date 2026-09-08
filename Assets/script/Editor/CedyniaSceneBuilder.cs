@@ -8,14 +8,20 @@ using UnityEngine.Rendering;
 public static class CedyniaSceneBuilder
 {
     const string ScenePath = "Assets/Scenes/Cedynia.unity";
-    const string ModelPath = "Assets/scene/cedynia.obj";
     const string MarkerPath = "Assets/Scenes/.cedynia_ready";
     const string TexDir = "Assets/Resources/Cedynia";
+    static readonly string[] ModelPaths =
+    {
+        "Assets/scene/cedynia_gotowa.obj",
+        "Assets/scene/cedynia_ulepszona.obj",
+        "Assets/scene/cedynia.obj"
+    };
 
     static CedyniaSceneBuilder()
     {
         EditorApplication.delayCall += TryBuild;
         EditorApplication.delayCall += TryPlaceHouses;
+        EditorApplication.delayCall += StripOldProceduralHouses;
     }
 
     [MenuItem("Cedynia/Zbuduj scene grodziska")]
@@ -49,12 +55,23 @@ public static class CedyniaSceneBuilder
         Build();
     }
 
+    static string ResolveModelPath()
+    {
+        foreach (var path in ModelPaths)
+        {
+            if (File.Exists(path))
+                return path;
+        }
+        return ModelPaths[0];
+    }
+
     static void Build()
     {
-        var model = AssetDatabase.LoadAssetAtPath<GameObject>(ModelPath);
+        string modelPath = ResolveModelPath();
+        var model = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
         if (model == null)
         {
-            Debug.LogWarning("Cedynia: brak modelu " + ModelPath);
+            Debug.LogWarning("Cedynia: brak modelu " + modelPath);
             return;
         }
 
@@ -85,7 +102,7 @@ public static class CedyniaSceneBuilder
             gord = Object.Instantiate(model);
         gord.name = "Grodzisko_Cedynia";
         gord.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-        gord.transform.localScale = Vector3.one * CedyniaWorld.GordScale;
+        gord.transform.localScale = Vector3.one * CedyniaWorld.DetectGordScale(gord);
 
         var animator = gord.GetComponent<Animator>();
         if (animator != null)
@@ -124,6 +141,25 @@ public static class CedyniaSceneBuilder
         AssetDatabase.Refresh();
     }
 
+    static void StripOldProceduralHouses()
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode)
+            return;
+        var gord = GameObject.Find("Grodzisko_Cedynia");
+        if (gord == null || !CedyniaWorld.HasModelHouses(gord))
+            return;
+        var leftover = GameObject.Find("Chaty_Slowianskie");
+        if (leftover == null)
+            return;
+        Object.DestroyImmediate(leftover);
+        var scene = EditorSceneManager.GetActiveScene();
+        if (scene.IsValid())
+        {
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+        }
+    }
+
     static void TryPlaceHouses()
     {
         if (EditorApplication.isPlayingOrWillChangePlaymode)
@@ -138,6 +174,13 @@ public static class CedyniaSceneBuilder
         var gord = GameObject.Find("Grodzisko_Cedynia");
         if (gord == null)
             return;
+        if (CedyniaWorld.HasModelHouses(gord))
+        {
+            var leftover = GameObject.Find("Chaty_Slowianskie");
+            if (leftover != null)
+                Object.DestroyImmediate(leftover);
+            return;
+        }
         if (gord.transform.Find("Chaty_Slowianskie") != null)
             return;
 

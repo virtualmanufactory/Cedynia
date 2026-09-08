@@ -3,11 +3,11 @@ using UnityEngine;
 
 public class CedyniaWorld : MonoBehaviour
 {
-    public const float GordScale = 8f;
-    public const float GordRadius = 52f;
-    public const float MoatRadius = 36.8f;
+    public const float GordScale = 1f;
+    public const float GordRadius = 50f;
+    public const float MoatRadius = 27f;
     public const float GroundY = 0.05f;
-    public const float WaterY = -0.12f;
+    public const float WaterY = 0.12f;
     public const float RiverDrop = 0.32f;
     public const float BankWidth = 5.5f;
     public const float WorldSize = 340f;
@@ -34,7 +34,7 @@ public class CedyniaWorld : MonoBehaviour
         var mats = CreateMaterials();
         var gord = PrepareGord(mats);
         BuildLandscape(mats);
-        BuildRiver(mats);
+        BuildRiver(mats, gord);
         BuildForest(mats);
         BuildWorldBounds();
         SpawnPlayer(gord);
@@ -110,13 +110,17 @@ public class CedyniaWorld : MonoBehaviour
         }
 
         if (gord == null)
+            gord = InstantiateGordPrefab();
+
+        if (gord == null)
         {
             Debug.LogWarning("Cedynia: nie znaleziono modelu grodziska.");
             return null;
         }
 
-        if (Mathf.Abs(gord.transform.localScale.x - GordScale) > 0.05f)
-            gord.transform.localScale = Vector3.one * GordScale;
+        float scale = DetectGordScale(gord);
+        if (Mathf.Abs(gord.transform.localScale.x - scale) > 0.05f)
+            gord.transform.localScale = Vector3.one * scale;
 
         var animator = gord.GetComponent<Animator>();
         if (animator != null)
@@ -124,6 +128,7 @@ public class CedyniaWorld : MonoBehaviour
 
         var bakedHouses = FindDeep(gord.transform, "Chaty_Slowianskie");
         var exitRamp = FindDeep(gord.transform, "Most_wyjscia");
+        bool modelHouses = HasModelHouses(gord);
 
         foreach (var mf in gord.GetComponentsInChildren<MeshFilter>())
         {
@@ -133,6 +138,28 @@ public class CedyniaWorld : MonoBehaviour
                 continue;
             if (exitRamp != null && mf.transform.IsChildOf(exitRamp))
                 continue;
+
+            if (modelHouses && IsModelHousePart(mf.gameObject.name))
+            {
+                Mesh houseMesh = mf.sharedMesh;
+                if (mf.sharedMesh.isReadable)
+                {
+                    houseMesh = Instantiate(mf.sharedMesh);
+                    houseMesh.name = mf.sharedMesh.name + "_walk";
+                    EnsureUVs(houseMesh, ObjectTile(mf.gameObject.name), mf.gameObject.name);
+                    mf.sharedMesh = houseMesh;
+                }
+                var houseRend = mf.GetComponent<MeshRenderer>();
+                if (houseRend != null)
+                    houseRend.sharedMaterials = MapMaterials(mf.gameObject.name, houseRend.sharedMaterials, mats);
+                if (SkipWalkCollider(mf.gameObject.name))
+                    continue;
+                var houseCol = mf.GetComponent<MeshCollider>();
+                if (houseCol == null)
+                    houseCol = mf.gameObject.AddComponent<MeshCollider>();
+                houseCol.sharedMesh = houseMesh;
+                continue;
+            }
 
             if (IsReplacedBuilding(mf.gameObject.name))
             {
@@ -158,28 +185,97 @@ public class CedyniaWorld : MonoBehaviour
             if (renderer != null)
                 renderer.sharedMaterials = MapMaterials(mf.gameObject.name, renderer.sharedMaterials, mats);
 
+            if (SkipWalkCollider(mf.gameObject.name))
+            {
+                var skipCol = mf.GetComponent<Collider>();
+                if (skipCol != null)
+                    skipCol.enabled = false;
+                continue;
+            }
+
             var col = mf.GetComponent<MeshCollider>();
             if (col == null)
                 col = mf.gameObject.AddComponent<MeshCollider>();
             col.sharedMesh = live;
         }
 
-        if (bakedHouses != null && bakedHouses.childCount > 0)
+        if (modelHouses)
+        {
+            var leftover = GameObject.Find("Chaty_Slowianskie");
+            if (leftover != null)
+                Destroy(leftover);
+        }
+        else if (bakedHouses != null && bakedHouses.childCount > 0)
             CedyniaSlavicBuildings.KeepExisting(bakedHouses.gameObject);
         else
             CedyniaSlavicBuildings.Replace(gord, mats.logWood, mats.thatchMoss, mats.woodDark);
 
-        CedyniaSlavicBuildings.HideOriginals(gord);
+        if (!modelHouses)
+            CedyniaSlavicBuildings.HideOriginals(gord);
         OpenExitThroughGate(gord);
-        if (FindDeep(gord.transform, "Most_wyjscia") == null)
+        bool hasBridge = FindDeep(gord.transform, "Most") != null
+                         || FindNameContains(gord.transform, "kladka") != null;
+        if (!hasBridge && FindDeep(gord.transform, "Most_wyjscia") == null)
             CedyniaSlavicBuildings.BuildExitRamp(gord, mats.wood);
         return gord;
     }
 
+    static GameObject InstantiateGordPrefab()
+    {
+#if UNITY_EDITOR
+        string[] paths =
+        {
+            "Assets/scene/cedynia_gotowa.obj",
+            "Assets/scene/cedynia_ulepszona.obj",
+            "Assets/scene/cedynia.obj"
+        };
+        foreach (var path in paths)
+        {
+            var model = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (model == null)
+                continue;
+            var gord = Instantiate(model);
+            gord.name = "Grodzisko_Cedynia";
+            gord.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            var animator = gord.GetComponent<Animator>();
+            if (animator != null)
+                animator.enabled = false;
+            return gord;
+        }
+#endif
+        return null;
+    }
+
+    public static float DetectGordScale(GameObject gord)
+    {
+        if (gord == null)
+            return GordScale;
+        foreach (var mf in gord.GetComponentsInChildren<MeshFilter>(true))
+        {
+            if (mf.sharedMesh == null || mf.gameObject.name != "Ground")
+                continue;
+            float span = Mathf.Max(mf.sharedMesh.bounds.size.x, mf.sharedMesh.bounds.size.z);
+            return span > 20f ? 1f : 8f;
+        }
+        return GordScale;
+    }
+
     static void OpenExitThroughGate(GameObject gord)
     {
-        Vector3 gate = new Vector3(-0.33f, 0f, -2.0f);
-        Vector3 dir = gate.normalized;
+        Vector3 dir = Vector3.right;
+        float alongMin = 11.2f;
+        float alongMax = 14.8f;
+        float halfWidth = 1.85f;
+
+        var most = FindDeep(gord.transform, "Most");
+        if (most == null)
+        {
+            dir = new Vector3(-0.33f, 0f, -2.0f).normalized;
+            alongMin = 1.1f;
+            alongMax = 5.2f;
+            halfWidth = 0.32f;
+        }
+
         var built = FindDeep(gord.transform, "Chaty_Slowianskie");
         if (built == null)
         {
@@ -196,19 +292,13 @@ public class CedyniaWorld : MonoBehaviour
                 continue;
 
             string n = mf.gameObject.name.ToLowerInvariant();
-            bool wall = n.Contains("palisade");
-            if (!wall)
+            if (!n.Contains("palisade"))
                 continue;
 
             if (!mf.sharedMesh.isReadable)
-            {
-                var blocked = mf.GetComponent<Collider>();
-                if (blocked != null)
-                    blocked.enabled = false;
                 continue;
-            }
 
-            Mesh cut = CutPassageMesh(mf.sharedMesh, dir, 1.1f, 5.2f, 0.32f);
+            Mesh cut = CutPassageMesh(mf.sharedMesh, dir, alongMin, alongMax, halfWidth);
             mf.sharedMesh = cut;
             var col = mf.GetComponent<MeshCollider>();
             if (col != null)
@@ -260,6 +350,40 @@ public class CedyniaWorld : MonoBehaviour
         return null;
     }
 
+    static Transform FindNameContains(Transform root, string part)
+    {
+        if (root == null)
+            return null;
+        if (root.name.IndexOf(part, System.StringComparison.OrdinalIgnoreCase) >= 0)
+            return root;
+        foreach (Transform child in root)
+        {
+            var found = FindNameContains(child, part);
+            if (found != null)
+                return found;
+        }
+        return null;
+    }
+
+    public static bool HasModelHouses(GameObject gord)
+    {
+        if (gord == null)
+            return false;
+        foreach (var t in gord.GetComponentsInChildren<Transform>(true))
+        {
+            if (t.name.IndexOf("Chata_", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+        }
+        return false;
+    }
+
+    static bool IsModelHousePart(string name)
+    {
+        string n = name.ToLowerInvariant();
+        return n.Contains("chata_") || n.Contains("podmurowka") || n.Contains("wiazki_strzechy")
+               || n.Contains("kalenica") || n.Contains("brama_");
+    }
+
     static bool IsReplacedBuilding(string name)
     {
         string n = name.ToLowerInvariant();
@@ -271,7 +395,8 @@ public class CedyniaWorld : MonoBehaviour
     static float ObjectTile(string name)
     {
         string n = name.ToLowerInvariant();
-        if (n.Contains("ground") || n.Contains("rampart") || n.Contains("moat"))
+        if (n.Contains("ground") || n.Contains("rampart") || n.Contains("moat") || n.Contains("laka")
+            || n.Contains("poszerzony") || n.Contains("droga") || n.Contains("brzeg"))
             return 0.85f;
         return 1.25f;
     }
@@ -292,22 +417,51 @@ public class CedyniaWorld : MonoBehaviour
 
     static Material PickMaterial(string objectName, string matName, Mats mats)
     {
-        string s = (matName + " " + objectName).ToLowerInvariant();
-        if (s.Contains("water") || s.Contains("moat"))
+        string mat = (matName ?? "").ToLowerInvariant().Replace("|", " ");
+        string obj = (objectName ?? "").ToLowerInvariant().Replace("|", " ");
+        string s = mat.Length > 2 ? mat : (mat + " " + obj);
+
+        if (s.Contains("woda") || s.Contains("fosa") || s.Contains("refleks") || s.Contains("water")
+            || obj == "moat" || obj.Contains("rzeka  woda") || obj.Contains("odnoga_rzeki  woda"))
             return mats.water;
-        if (s.Contains("thatch"))
-            return mats.thatch;
-        if (s.Contains("grass") || s.Contains("ground"))
-            return mats.grass;
-        if (s.Contains("earth") || s.Contains("rampart"))
-            return mats.earth;
-        if (s.Contains("wooddark") || s.Contains("wood_dark") || s.Contains("wooddark"))
+        if (s.Contains("gont"))
             return mats.woodDark;
-        if (s.Contains("wood") || s.Contains("palisade") || s.Contains("bridge") || s.Contains("gate") || s.Contains("hut"))
+        if (s.Contains("strzecha") || s.Contains("thatch") || s.Contains("dach") || s.Contains("trzcina"))
+            return mats.thatchMoss != null ? mats.thatchMoss : mats.thatch;
+        if (s.Contains("liscie") || obj.Contains("korona"))
+            return mats.leaves;
+        if (obj.Contains("pien") || s.Contains("bark"))
+            return mats.bark;
+        if (s.Contains("laka") || s.Contains("poszerzony") || s.Contains("grass")
+            || (obj.Contains("ground") && !obj.Contains("chata")))
+            return mats.grass;
+        if (s.Contains("kamien") || s.Contains("podmurowka") || s.Contains("prog") || s.Contains("brzeg") || s.Contains("piasek"))
+            return mats.sand;
+        if (s.Contains("ubita") || s.Contains("ziemia") || s.Contains("earth") || obj.Contains("rampart") || obj.Contains("droga"))
+            return mats.earth;
+        if (s.Contains("wnetrze") || s.Contains("okno") || s.Contains("postarzale"))
+            return mats.woodDark;
+        if (s.Contains("wooddark") || s.Contains("wood_dark"))
+            return mats.woodDark;
+        if (s.Contains("drewno") || s.Contains("belki") || s.Contains("drzwi") || s.Contains("slup")
+            || s.Contains("bale") || s.Contains("kalenica") || s.Contains("nadproze") || s.Contains("deski")
+            || obj.Contains("most") || obj.Contains("kladka") || obj.Contains("plot") || obj.Contains("palisade"))
+            return mats.logWood != null ? mats.logWood : mats.wood;
+        if (s.Contains("wood") || obj.Contains("brama") || obj.Contains("bridge") || obj.Contains("gate") || obj.Contains("hut"))
             return s.Contains("dark") ? mats.woodDark : mats.wood;
-        if (s.Contains("hut") || s.Contains("tower"))
-            return mats.wood;
+        if (obj.Contains("chata"))
+            return mats.logWood != null ? mats.logWood : mats.wood;
         return mats.earth;
+    }
+
+    static bool SkipWalkCollider(string objectName)
+    {
+        string n = (objectName ?? "").ToLowerInvariant().Replace("|", " ");
+        if (n.Contains("korona") || n.Contains("liscie") || n.Contains("trzcina") || n.Contains("refleks") || n.Contains("gont"))
+            return true;
+        if (n.Contains("woda") || n == "moat" || n.Contains("rzeka  woda") || n.Contains("odnoga_rzeki  woda"))
+            return true;
+        return false;
     }
 
     static void EnsureUVs(Mesh mesh, float tile, string objectName = "")
@@ -317,7 +471,7 @@ public class CedyniaWorld : MonoBehaviour
             return;
 
         string n = objectName.ToLowerInvariant();
-        bool forceTriplanar = n.Contains("ground") || n.Contains("rampart");
+        bool forceTriplanar = n.Contains("ground") || n.Contains("rampart") || n.Contains("poszerzony") || n.Contains("laka") || n.Contains("droga");
 
         var existing = mesh.uv;
         if (!forceTriplanar && existing != null && existing.Length == verts.Length)
@@ -355,8 +509,8 @@ public class CedyniaWorld : MonoBehaviour
 
     public static float RiverX(float z)
     {
-        float far = -72f;
-        float join = -MoatRadius;
+        float far = -82f;
+        float join = -29f;
         float t = 1f - Mathf.SmoothStep(0f, 90f, Mathf.Abs(z));
         return Mathf.Lerp(far, join, t);
     }
@@ -483,7 +637,7 @@ public class CedyniaWorld : MonoBehaviour
         go.AddComponent<MeshCollider>().sharedMesh = mesh;
     }
 
-    void BuildRiver(Mats mats)
+    void BuildRiver(Mats mats, GameObject gord)
     {
         const int segs = 120;
         const int across = 7;
@@ -521,6 +675,9 @@ public class CedyniaWorld : MonoBehaviour
             for (int a = 0; a < across; a++)
             {
                 int i0 = i * (across + 1) + a;
+                Vector3 mid = (verts[i0] + verts[i0 + across + 1] + verts[i0 + 1]) / 3f;
+                if (Mathf.Sqrt(mid.x * mid.x + mid.z * mid.z) < GordRadius - 1f)
+                    continue;
                 tris[t++] = i0;
                 tris[t++] = i0 + across + 1;
                 tris[t++] = i0 + 1;
@@ -529,6 +686,7 @@ public class CedyniaWorld : MonoBehaviour
                 tris[t++] = i0 + across + 2;
             }
         }
+        System.Array.Resize(ref tris, t);
 
         var mesh = new Mesh { name = "Rzeka" };
         mesh.vertices = verts;
@@ -544,7 +702,9 @@ public class CedyniaWorld : MonoBehaviour
         rend.sharedMaterial = mats.water;
         rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-        BuildMoatRing(mats.water);
+        bool hasMoat = gord != null && FindDeep(gord.transform, "Moat") != null;
+        if (!hasMoat)
+            BuildMoatRing(mats.water);
     }
 
     void BuildMoatRing(Material water)
@@ -753,27 +913,48 @@ public class CedyniaWorld : MonoBehaviour
 
     void SpawnPlayer(GameObject gord)
     {
-        Vector3 guess = new Vector3(0f, 28f, 2f);
+        Vector3 guess = new Vector3(0f, 8.2f, 0f);
         Vector3 lookTarget = guess + Vector3.forward;
         if (gord != null)
         {
-            var houses = FindDeep(gord.transform, "Chaty_Slowianskie");
-            Transform chata = houses != null ? houses.Find("Chata_1") : null;
-            if (chata == null && houses != null && houses.childCount > 0)
-                chata = houses.GetChild(0);
+            Transform chata = null;
+            foreach (var t in gord.GetComponentsInChildren<Transform>())
+            {
+                if (t.name.IndexOf("Chata_01", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    chata = t;
+                    break;
+                }
+            }
+            if (chata == null)
+            {
+                var houses = FindDeep(gord.transform, "Chaty_Slowianskie");
+                if (houses != null && houses.childCount > 0)
+                    chata = houses.GetChild(0);
+            }
             if (chata != null)
             {
-                guess = chata.position + gord.transform.TransformDirection(new Vector3(-0.35f, 0.8f, 0.15f));
-                lookTarget = chata.position;
+                var rend = chata.GetComponent<Renderer>();
+                if (rend == null)
+                    rend = chata.GetComponentInChildren<Renderer>();
+                Vector3 house = rend != null ? rend.bounds.center : chata.position;
+                float floorY = rend != null ? rend.bounds.min.y : house.y;
+                Vector3 inward = new Vector3(-house.x, 0f, -house.z);
+                if (inward.sqrMagnitude < 0.01f)
+                    inward = Vector3.back;
+                inward.Normalize();
+                guess = new Vector3(house.x, floorY + 1.7f, house.z) + inward * 4.2f;
+                lookTarget = new Vector3(house.x, floorY + 1.4f, house.z);
             }
             else
             {
-                guess = gord.transform.TransformPoint(new Vector3(0.15f, 1.55f, 0.35f));
-                lookTarget = gord.transform.TransformPoint(new Vector3(1.23f, 1.4f, 1.51f));
+                guess = gord.transform.TransformPoint(new Vector3(0f, 8.1f, 0.4f));
+                lookTarget = gord.transform.TransformPoint(new Vector3(4f, 7.8f, 0f));
             }
         }
 
-        if (Physics.Raycast(guess + Vector3.up * 8f, Vector3.down, out RaycastHit hit, 40f))
+        Physics.SyncTransforms();
+        if (Physics.Raycast(guess + Vector3.up * 12f, Vector3.down, out RaycastHit hit, 50f))
             spawnPoint = hit.point;
         else
             spawnPoint = guess;
